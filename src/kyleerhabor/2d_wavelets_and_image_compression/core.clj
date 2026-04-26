@@ -7,167 +7,233 @@
    [clojure.tools.logging :as log]))
 
 (def sqrt-two (math/sqrt 2))
+;; For a grayscale image, 2^8 - 1 = 255
+(def default-image-bits-per-pixel 8)
+;; 16 * 16 = 256
+(def default-image-size 16)
 
 ;; s[k, j] = (s[k + 1, 2j] + s[k + 1, 2j + 1]) / √2
 (defn approximation [s k j]
   (let [jj (* 2 j)
         x (/ (+ (get s jj) (get s (inc jj))) sqrt-two)]
-    (log/debug (str "approximation: k = " k ", j = " j ", s[k, j] = " x))
+    (log/trace (str "approximation: k = " k ", j = " j ", s[k, j] = " x))
     x))
 
 ;; a[k, j] = (s[k + 1, 2j] - s[k + 1, 2j + 1]) / √2
 (defn detail [s k j]
   (let [jj (* 2 j)
         x (/ (- (get s jj) (get s (inc jj))) sqrt-two)]
-    (log/debug (str "detail: k = " k ", j = " j ", a[k, j] = " x))
+    (log/trace (str "detail: k = " k ", j = " j ", a[k, j] = " x))
     x))
-
-(defn transform [s]
-  (loop [s s
-         a []]
-    (let [n (count s)
-          k (dec (Long/numberOfTrailingZeros n))
-          js (range (quot n 2))]
-      (if (seq js)
-        (let [s' (map (partial approximation s k) js)
-              a' (map (partial detail s k) js)]
-          (recur (vec s') (concat a' a)))
-        {:s s
-         :a a}))))
 
 ;; s[k + 1, 2j] = (s[k, j] + a[k, j]) / √2
 (defn invert-1 [s a k j]
-  (let [x (/ (+ (get s j) (get a j)) sqrt-two)]
-    (log/debug (str "invert: k = " k ", j = " j ", s[k + 1, 2j] = " x))
+  (let [x (/ (+ s a) sqrt-two)]
+    (log/trace (str "invert: k = " k ", j = " j ", s[k + 1, 2j] = " x))
     x))
 
 ;; s[k + 1, 2j + 1] = (s[k, j] - a[k, j]) / √2
 (defn invert-2 [s a k j]
-  (let [x (/ (- (get s j) (get a j)) sqrt-two)]
-    (log/debug (str "invert: k = " k ", j = " j ", s[k + 1, 2j + 1] = " x))
+  (let [x (/ (- s a) sqrt-two)]
+    (log/trace (str "invert: k = " k ", j = " j ", s[k + 1, 2j] = " x))
     x))
-
-(defn invert [s a]
-  (loop [s s
-         a a]
-    (if (seq a)
-      (let [n (count s)
-            k (Long/numberOfTrailingZeros n)
-            js (range n)
-            s1 (map (partial invert-1 s a k) js)
-            s2 (map (partial invert-2 s a k) js)]
-        (recur (vec (interleave s1 s2)) (vec (drop n a))))
-      (mapv math/round s))))
-
-(defn theorem [s threshold]
-  (let [{s' :s
-         :keys [a]} (transform s)
-        a' (mapv #(if (< threshold (abs %)) % 0.0) a)]
-    (log/info (str "s: " s " -> " s' ", a: " (vec a) " -> " a'))
-    (let [s (invert s' a')]
-      (log/info (str "s: " s' " -> " s)))))
-
-(comment
-  (def s1 [4 6 10 12 8 6 2 2])
-  ;; s = [17.677669529663685]
-  ;; a: [ 4.949747468305831
-  ;;     -6.0               5.0
-  ;;     -1.414213562373095 -1.414213562373095 1.414213562373095 0.0]
-  ;; -> [ 4.949747468305831
-  ;;     -6.0               5.0
-  ;;     -1.414213562373095 -1.414213562373095 1.414213562373095 0]
-  (is (= (theorem s1 0) s1))
-  ;; s = [17.677669529663685]
-  ;; a: [ 4.949747468305831
-  ;;     -6.0               5.0
-  ;;     -1.414213562373095 -1.414213562373095 1.414213562373095 0.0]
-  ;; -> [ 4.949747468305831
-  ;;     -6.0               5.0
-  ;;      0                 0   0 0]
-  (is (= (theorem s1 sqrt-two) [5 5 11 11 7 7 2 2]))
-
-  (def s2 [1 1 1 1 1 1 1 1
-           3 3 3 3 3 3 3 3
-           2 2 2 2 2 2 2 2
-           0 0 0 0 0 0 0 0])
-  ;; s = [8.485281374238568]
-  ;; a: [ 2.828427124746189
-  ;;     -3.9999999999999982 3.9999999999999987
-  ;;      0.0                0.0                0.0 0.0
-  ;;      0.0                0.0                0.0 0.0 0.0 0.0 0.0 0.0
-  ;;      0.0                0.0                0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0]
-  ;; -> [ 2.828427124746189
-  ;;     -3.9999999999999982 3.9999999999999987
-  ;;      0                  0                  0 0
-  ;;      0                  0                  0 0 0 0 0 0
-  ;;      0                  0                  0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-  (is (= (theorem s2 0) s2))
-  ;; s = [8.485281374238568]
-  ;; a: [ 2.828427124746189
-  ;;     -3.9999999999999982 3.9999999999999987
-  ;;      0.0                0.0                0.0 0.0
-  ;;      0.0                0.0                0.0 0.0 0.0 0.0 0.0 0.0
-  ;;      0.0                0.0                0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0]
-  ;; -> [ 2.828427124746189
-  ;;     -3.9999999999999982 3.9999999999999987
-  ;;      0                  0                  0 0
-  ;;      0                  0                  0 0 0 0 0 0
-  ;;      0                  0                  0 0 0 0 0 0 0 0 0 0 0 0 0 0]
-  (is (= (theorem s2 sqrt-two) s2))
-
-  (defn sine-signal [n scale]
-    (let [step (/ (* 2 math/PI) n)]
-      (->> (range n)
-        (map #(math/sin (* step %)))
-        (map #(math/round (* scale %)))
-        (vec))))
-
-  (def sine-32 (sine-signal 32 100))
-  ;; s = [0.0]
-  ;; a: [359.21024484276603
-  ;;     -24.99999999999998  24.99999999999998
-  ;;     -81.31727983645295  66.46803743153544  81.31727983645295  -66.46803743153544
-  ;;     -36.99999999999999 -18.000000000000004 11.500000000000002  34.5               36.99999999999999  18.000000000000004 -11.500000000000002 -34.5
-  ;;     -14.14213562373095 -12.727922061357855 -8.48528137423857   -4.242640687119285  1.414213562373095  6.363961030678928  10.606601717798211  12.727922061357855 14.14213562373095 12.727922061357855 8.48528137423857 4.242640687119285 -1.414213562373095 -6.363961030678928 -10.606601717798211 -12.727922061357855]
-  ;; -> [359.21024484276603
-  ;;     -24.99999999999998  24.99999999999998
-  ;;     -81.31727983645295  66.46803743153544  81.31727983645295  -66.46803743153544
-  ;;     -36.99999999999999 -18.000000000000004 11.500000000000002  34.5               36.99999999999999  18.000000000000004 -11.500000000000002 -34.5
-  ;;     -14.14213562373095 -12.727922061357855 -8.48528137423857   -4.242640687119285  1.414213562373095  6.363961030678928  10.606601717798211  12.727922061357855 14.14213562373095 12.727922061357855 8.48528137423857 4.242640687119285 -1.414213562373095 -6.363961030678928 -10.606601717798211 -12.727922061357855]
-  (is (= (theorem sine-32 0) sine-32))
-  ;; s = [0.0]
-  ;; a: [359.21024484276603
-  ;;     -24.99999999999998  24.99999999999998
-  ;;     -81.31727983645295  66.46803743153544  81.31727983645295  -66.46803743153544
-  ;;     -36.99999999999999 -18.000000000000004 11.500000000000002  34.5               36.99999999999999  18.000000000000004 -11.500000000000002 -34.5
-  ;;     -14.14213562373095 -12.727922061357855 -8.48528137423857   -4.242640687119285  1.414213562373095  6.363961030678928  10.606601717798211  12.727922061357855 14.14213562373095 12.727922061357855 8.48528137423857 4.242640687119285 -1.414213562373095 -6.363961030678928 -10.606601717798211 -12.727922061357855]
-  ;; -> [359.21024484276603
-  ;;     -24.99999999999998  24.99999999999998
-  ;;     -81.31727983645295  66.46803743153544  81.31727983645295  -66.46803743153544
-  ;;     -36.99999999999999 -18.000000000000004 11.500000000000002  34.5              36.99999999999999 18.000000000000004 -11.500000000000002 -34.5
-  ;;     -14.14213562373095 -12.727922061357855  0                   0                 0                 0                  10.606601717798211  12.727922061357855 14.14213562373095 12.727922061357855 0 0 0 0 -10.606601717798211 -12.727922061357855]
-  (is (= (theorem sine-32 10) [0 20 38 56 77 77 95 95 99 99 87 87 71 56 38 20 0 -20 -38 -56 -77 -77 -95 -95 -99 -99 -87 -87 -71 -56 -38 -20])))
-
-(def cli-options
-  [["-h" "--help"]
-   ["-s" "--s NUMBER" nil
-    :multi true
-    :default []
-    :parse-fn parse-long
-    :update-fn conj]
-   ["-t" "--threshold NUMBER" nil
-    :default 0
-    :parse-fn parse-double]])
 
 (defn power-of-two? [x]
   ;; https://stackoverflow.com/a/600306
   (and (pos? x) (zero? (bit-and x (dec x)))))
 
+(defn digit-count [n]
+  ;; https://stackoverflow.com/a/40322349
+  (if (zero? n)
+    1
+    (int (inc (math/log10 n)))))
+
+(defn image-row-name [row ds]
+  (let [precision 2
+        ;; The 2 is for the minus sign and decimal point.
+        padding (+ 2 ds precision)]
+    (str/join " " (map #(format (str "%" padding "." precision "f") %) row))))
+
+(defn image-name [{:keys [data size]}]
+  (let [ds (digit-count (int (reduce max 0 data)))
+        rows (->> data 
+               (partition size)
+               (map #(image-row-name % ds))
+               (str/join "\n "))
+        result (str "[" rows "]")]
+    result))
+
+(defn transform-row [row size k]
+  (let [js (range (quot size 2))
+        s (map #(approximation row k %) js)
+        a (map #(detail row k %) js)
+        result (interleave s a)]
+    result))
+
+(defn transform-rows [{:keys [data size]} k]
+  (let [data (->> data
+               (partition size)
+               (map #(transform-row (vec %) size k))
+               (reduce concat))
+        image {:data data
+               :size size}]
+    image))
+
+(defn transpose-row [v size i] 
+  (->> i
+    (iterate #(+ % size))
+    (take size)
+    (map #(get v %))))
+
+(defn transpose [{:keys [data size]}]
+  (let [v (vec data)
+        data (->> (range size)
+               (map #(transpose-row v size %))
+               (reduce concat))
+        image {:data data
+               :size size}]
+    image))
+
+(defn transform-columns [image k]
+  (transpose (transform-rows (transpose image) k)))
+
+(def percentile-90-threshold 0.9)
+
+(defn percentile-90 [s] 
+  (let [ss (sort (map abs s))
+        i (int (math/floor (* percentile-90-threshold (count s))))
+        threshold (nth ss i)]
+    threshold))
+
+(defn edge-axes-2 [{:keys [l h]} [low high]]
+  {:l (concat l low)
+   :h (concat h high)})
+
+(defn edge-axes [half h]
+  (->> h
+    (map #(split-at half %))
+    (reduce edge-axes-2 {:l [] :h []})))
+
+(defn edges [{:keys [data size]}]
+  (let [half (/ size 2)
+        rows (partition size data)
+        [l h] (split-at half rows)
+        {ll :l lh :h} (edge-axes half l)
+        {hl :l hh :h} (edge-axes half h)
+        result {:ll ll
+                :lh lh
+                :hl hl
+                :hh hh}]
+    result))
+
+(defn edges->image [{:keys [size]} {:keys [ll lh hl hh]}]
+  (let [half (/ size 2)
+        l (concat ll hl)
+        h (concat lh hh)
+        data (reduce concat (interleave (partition half l) (partition half h)))
+        image {:data data
+               :size size}]
+    image))
+
+(defn apply-threshold [threshold x]
+  (if (< (abs x) threshold)
+    0.0
+    x))
+
+(defn- invert-transform-row-2 [[s a] k j]
+  [(invert-1 s a k j) (invert-2 s a k j)])
+
+(defn invert-transform-row [row k]
+  (->> (partition 2 row)
+    (map-indexed #(invert-transform-row-2 %2 k %1))
+    (reduce concat)))
+
+(defn invert-transform-rows [{:keys [data size]} k]
+  (let [data (->> data
+               (partition size)
+               (map #(invert-transform-row % k))
+               (reduce concat))
+        image {:data data
+               :size size}]
+    image))
+
+(defn invert-transform-columns [image k]
+  (transpose (invert-transform-rows (transpose image) k)))
+
+(defn theorem [{:keys [size]
+                :as image}]
+  (println (image-name image))
+  (let [k (dec (Long/numberOfTrailingZeros size))
+        image (transform-rows image k)
+        _ (println (image-name image))
+        image (transform-columns image k)
+        _ (println (image-name image))
+        {:keys [ll lh hl hh]} (edges image)
+        threshold (percentile-90 (concat lh hl hh))
+        lh (map #(apply-threshold threshold %) lh)
+        hl (map #(apply-threshold threshold %) hl)
+        hh (map #(apply-threshold threshold %) hh)
+        image (edges->image image {:ll ll :lh lh :hl hl :hh hh})
+        _ (println (image-name image))
+        image (invert-transform-columns image k)
+        _ (println (image-name image))
+        image (invert-transform-rows image k)
+        _ (println (image-name image))]
+    image))
+
+(defn ->image [bits-per-pixel size]
+  {:data (repeatedly (* size size) #(double (rand-int (math/pow 2 bits-per-pixel))))
+   :size size})
+
+(comment
+  (defn test-image [image data]
+    (is (= (map math/round (:data image)) data)))
+  
+  (def image {:data [194.0 157.0 221.0 164.0
+                      13.0 209.0 182.0  88.0
+                     152.0 200.0  14.0 139.0
+                       0.0 199.0   8.0  48.0]
+              :size 4})
+  (test-image (theorem image) [194 157 164 164
+                                13 209 164 164
+                               138 138   0   0
+                               138 138   0   0])
+  
+  (def image {:data [146.0  70.0 159.0  44.0   3.0  28.0 234.0 238.0
+                      24.0 101.0  30.0  87.0 247.0 209.0 194.0  42.0
+                      72.0 186.0 111.0  62.0 165.0 117.0 152.0 113.0
+                     115.0  58.0 176.0  83.0 182.0 129.0   3.0 155.0
+                      25.0 201.0 247.0  43.0   7.0  84.0  79.0 213.0
+                     248.0 156.0  13.0 169.0  31.0 245.0 252.0  34.0
+                     161.0   6.0 122.0  66.0   8.0 118.0  37.0  32.0
+                      60.0 171.0  31.0  83.0  77.0 241.0  54.0  49.0]
+              :size 8})
+  (test-image (theorem image) [146  70 159 44 122 122 177 177
+                                24 101  30 87 122 122 177 177
+                                72 186 111 62 148 148   0   0
+                               115  58 176 83 148 148   0   0
+                               157 157   0  0   0   0 144 144
+                               157 157   0  0   0   0 144 144
+                                 0   0   0  0   0   0   0   0
+                                 0   0   0  0   0   0   0   0])
+  
+  (theorem (->image default-image-bits-per-pixel default-image-size)))
+
+(def cli-options
+  [["-h" "--help"]
+   [nil "--bits-per-pixel NUMBER" nil
+    :default default-image-bits-per-pixel
+    :parse-fn parse-long
+    :validate [#(not (neg? %)) "Must not be negative"]]
+   [nil "--size NUMBER" nil
+    :default default-image-size
+    :parse-fn parse-long
+    :validate [power-of-two? "Must be a power of 2"]]])
+
 (defn -main [& args]
   (let [{:keys [summary errors]
-         {:keys [help s threshold]} :options} (cli/parse-opts args cli-options)]
+         {:keys [help bits-per-pixel size]} :options} (cli/parse-opts args cli-options)]
     (cond
-      help summary
-      errors (str/join "\n" errors)
-      (not (power-of-two? (count s))) "s must be a power of 2"
-      :else (theorem s threshold))))
+      help (println summary)
+      errors (println (str/join "\n" errors))
+      :else (theorem (->image bits-per-pixel size)))))

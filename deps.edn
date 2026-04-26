@@ -7,7 +7,7 @@
  :aliases {:main {:jvm-opts ["-Dclojure.tools.logging.factory=clojure.tools.logging.impl/slf4j-factory"]}
            :dev {:jvm-opts [;; https://nrepl.org/nrepl/installation.html#jvmti
                             "-Djdk.attach.allowAttachSelf"
-                            "-Dorg.slf4j.simpleLogger.defaultLogLevel=trace"]}
+                            "-Dorg.slf4j.simpleLogger.defaultLogLevel=debug"]}
            ;; clojure -M:outdated
            :outdated {:deps {com.github.liquidz/antq {:mvn/version "RELEASE"}}
                       :main-opts ["-m" "antq.core"]}}}
