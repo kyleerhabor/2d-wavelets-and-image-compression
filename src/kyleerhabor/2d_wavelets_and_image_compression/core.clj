@@ -144,7 +144,8 @@
   [(invert-1 s a k j) (invert-2 s a k j)])
 
 (defn invert-transform-row [row k]
-  (->> (partition 2 row)
+  (->> row
+    (partition 2)
     (map-indexed #(invert-transform-row-2 %2 k %1))
     (reduce concat)))
 
@@ -160,26 +161,34 @@
 (defn invert-transform-columns [image k]
   (transpose (invert-transform-rows (transpose image) k)))
 
+(defn rmse [image image']
+  (let [data (:data image)
+        data' (:data image')
+        n (count data)
+        sum-squared-diff (reduce + (map #(math/pow (- %1 %2) 2) data data'))]
+    (math/sqrt (/ sum-squared-diff n))))
+
 (defn theorem [{:keys [size]
                 :as image}]
   (println (image-name image))
   (let [k (dec (Long/numberOfTrailingZeros size))
-        image (transform-rows image k)
-        _ (println (image-name image))
-        image (transform-columns image k)
-        _ (println (image-name image))
-        {:keys [ll lh hl hh]} (edges image)
+        image' (transform-rows image k)
+        _ (println (image-name image'))
+        image' (transform-columns image' k)
+        _ (println (image-name image'))
+        {:keys [ll lh hl hh]} (edges image')
         threshold (percentile-90 (concat lh hl hh))
         lh (map #(apply-threshold threshold %) lh)
         hl (map #(apply-threshold threshold %) hl)
         hh (map #(apply-threshold threshold %) hh)
-        image (edges->image image {:ll ll :lh lh :hl hl :hh hh})
-        _ (println (image-name image))
-        image (invert-transform-columns image k)
-        _ (println (image-name image))
-        image (invert-transform-rows image k)
-        _ (println (image-name image))]
-    image))
+        image' (edges->image image' {:ll ll :lh lh :hl hl :hh hh})
+        _ (println (image-name image'))
+        image' (invert-transform-columns image' k)
+        _ (println (image-name image'))
+        image' (invert-transform-rows image' k)
+        _ (println (image-name image'))]
+    (print "RMSE:" (rmse image image'))
+    image'))
 
 (defn ->image [bits-per-pixel size]
   {:data (repeatedly (* size size) #(double (rand-int (math/pow 2 bits-per-pixel))))
@@ -217,7 +226,23 @@
                                  0   0   0  0   0   0   0   0
                                  0   0   0  0   0   0   0   0])
   
-  (theorem (->image default-image-bits-per-pixel default-image-size)))
+  (theorem (->image default-image-bits-per-pixel default-image-size))
+  
+  ;; [a b c d
+  ;;  e f g h
+  ;;  i j k l
+  ;;  m n o p]
+  ;; 
+  ;; [a' b* c' d*
+  ;;  e' f* g' h*
+  ;;  i' j* k' l*
+  ;;  m' n* o' p*]
+  ;; 
+  ;; [a'' b*' c'' d*'
+  ;;  e'* f** g'* h**
+  ;;  i'' j*' k'' l*'
+  ;;  m'* n** o'* p**]
+  )
 
 (def cli-options
   [["-h" "--help"]
