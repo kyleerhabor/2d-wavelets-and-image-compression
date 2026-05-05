@@ -67,7 +67,7 @@
   (let [js (range (quot size 2))
         s (map #(approximation row k %) js)
         a (map #(detail row k %) js)
-        result (interleave s a)]
+        result (concat s a)]
     result))
 
 (defn transform-rows [{:keys [data size]} k]
@@ -140,14 +140,23 @@
     0.0
     x))
 
-(defn- invert-transform-row-2 [[s a] k j]
-  [(invert-1 s a k j) (invert-2 s a k j)])
+(defn invert-transform-row-2 [[s a] k j]
+  {:s (invert-1 s a k j)
+   :a (invert-2 s a k j)})
+
+(defn invert-transform-row-2-2 [result x]
+  {:s (conj (:s result) (:s x))
+   :a (conj (:a result) (:a x))})
 
 (defn invert-transform-row [row k]
-  (->> row
-    (partition 2)
-    (map-indexed #(invert-transform-row-2 %2 k %1))
-    (reduce concat)))
+  (let [[s a] (split-at (/ (count row) 2) row)
+        {:keys [s a]} (->> (interleave s a)
+                        (partition 2)
+                        (map-indexed #(invert-transform-row-2 %2 k %1))
+                        (reduce invert-transform-row-2-2 {:s []
+                                                          :a []}))
+        result (interleave s a)]
+    result))
 
 (defn invert-transform-rows [{:keys [data size]} k]
   (let [data (->> data
@@ -187,7 +196,7 @@
         _ (println (image-name image'))
         image' (invert-transform-rows image' k)
         _ (println (image-name image'))]
-    (print "RMSE:" (rmse image image'))
+    (print "RMSE:" (format "%.2f" (rmse image image')))
     image'))
 
 (defn ->image [bits-per-pixel size]
@@ -203,10 +212,10 @@
                      152.0 200.0  14.0 139.0
                        0.0 199.0   8.0  48.0]
               :size 4})
-  (test-image (theorem image) [194 157 164 164
-                                13 209 164 164
-                               138 138   0   0
-                               138 138   0   0])
+  (test-image (theorem image) [201  85 164 164
+                                85 201 164 164
+                                76 199  52  52
+                                76 199  52  52])
   
   (def image {:data [146.0  70.0 159.0  44.0   3.0  28.0 234.0 238.0
                       24.0 101.0  30.0  87.0 247.0 209.0 194.0  42.0
@@ -217,14 +226,14 @@
                      161.0   6.0 122.0  66.0   8.0 118.0  37.0  32.0
                       60.0 171.0  31.0  83.0  77.0 241.0  54.0  49.0]
               :size 8})
-  (test-image (theorem image) [146  70 159 44 122 122 177 177
-                                24 101  30 87 122 122 177 177
-                                72 186 111 62 148 148   0   0
-                               115  58 176 83 148 148   0   0
-                               157 157   0  0   0   0 144 144
-                               157 157   0  0   0   0 144 144
-                                 0   0   0  0   0   0   0   0
-                                 0   0   0  0   0   0   0   0])
+  (test-image (theorem image) [ 85  85  80  80  15  15 177 177
+                                85  85  80  80 228 228 177 177
+                               108 108 108 108 148 148 106 106
+                               108 108 108 108 148 148 106 106
+                               157 157 208  28  19 164  57 232
+                               157 157  28 208  19 164 232  57
+                                99  99  75  75  42 179  43  43
+                                99  99  75  75  42 179  43  43])
   
   (theorem (->image default-image-bits-per-pixel default-image-size))
   
