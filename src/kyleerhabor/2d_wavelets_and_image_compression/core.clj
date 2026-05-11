@@ -56,7 +56,7 @@
 
 (defn image-name [{:keys [data size]}]
   (let [ds (digit-count (int (reduce max 0 data)))
-        rows (->> data 
+        rows (->> data
                (partition size)
                (map #(image-row-name % ds))
                (str/join "\n "))
